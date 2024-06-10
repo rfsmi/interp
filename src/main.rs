@@ -1,12 +1,15 @@
 use std::{fs, path::PathBuf};
 
 use clap::Parser;
-use object::{ObjectPool, Value};
 use token::Tokens;
 
-mod eval;
+mod function;
 mod object;
+mod pool;
+mod thread;
 mod token;
+mod value;
+mod vm;
 
 /// Interpreter test program
 #[derive(Parser, Debug)]
