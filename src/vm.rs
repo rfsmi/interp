@@ -8,46 +8,53 @@ use crate::{
 
 #[derive(Clone, Copy)]
 enum Expr {
-    Load { i: usize },
-    Literal { integer: i64 },
-    Function { entry: usize, closure_len: u32 },
+    Load {
+        i: usize,
+    },
+    Literal {
+        integer: i64,
+    },
+    Function {
+        entry: usize,
+        closure_len: u32,
+        num_params: u32,
+    },
     Return,
-    Call,
+    Call {
+        num_args: u32,
+    },
     Add,
 }
 
 struct VM {
     exprs: Vec<Expr>,
     pool: ObjectPool,
-    threads: Vec<Value>,
+    thread: Value,
     pub debug: bool,
 }
 
 impl VM {
-    pub fn new(exprs: Vec<Expr>) -> Self {
+    pub fn new(exprs: Vec<Expr>, entry: usize) -> Self {
+        let mut pool = ObjectPool::new();
+        let thread = pool.allocate(Object::Thread(Thread::new(entry)));
         Self {
             exprs,
-            pool: ObjectPool::new(),
-            threads: Vec::new(),
+            pool,
+            thread,
             debug: false,
         }
     }
 
-    pub fn new_thread(&mut self, target: usize) {
-        let thread = Object::Thread(Thread::new(target));
-        self.threads.push(self.pool.allocate(thread));
-    }
-
     fn thread_mut(&mut self) -> &mut Thread {
-        self.pool.thread_mut(self.threads[0])
+        self.pool.thread_mut(self.thread)
     }
 
     fn thread(&self) -> &Thread {
-        self.pool.thread(self.threads[0])
+        self.pool.thread(self.thread)
     }
 
     pub fn running(&self) -> bool {
-        !self.threads.is_empty()
+        !self.thread().frames.is_empty()
     }
 
     pub fn step(&mut self) {
@@ -60,11 +67,15 @@ impl VM {
             match expr {
                 Expr::Load { i } => println!("load {i}"),
                 Expr::Literal { integer } => println!("literal {integer}"),
-                Expr::Function { entry, closure_len } => {
-                    println!("function addr:{entry} closure:{closure_len}")
+                Expr::Function {
+                    entry,
+                    closure_len,
+                    num_params,
+                } => {
+                    println!("function addr:{entry} params:{num_params} closure:{closure_len}")
                 }
                 Expr::Return => println!("return"),
-                Expr::Call => println!("call"),
+                Expr::Call { num_args } => println!("call args:{num_args}"),
                 Expr::Add => println!("add"),
             }
         }
@@ -85,9 +96,11 @@ impl VM {
             Expr::Function {
                 entry: first_expr,
                 closure_len,
+                num_params,
             } => {
                 let closure = Object::Function(Function {
                     entry: first_expr,
+                    num_params,
                     closure: self.thread_mut().pop_n(closure_len as usize),
                 });
                 let value = self.pool.allocate(closure);
@@ -95,18 +108,20 @@ impl VM {
             }
             Expr::Return => {
                 self.thread_mut().ret();
-                if self.thread().done() {
-                    self.threads.remove(0);
-                    return;
-                }
             }
-            Expr::Call => {
+            Expr::Call { num_args } => {
                 let value = self.thread_mut().pop();
                 let function = self.pool.function(value).clone();
+                if num_args != function.num_params {
+                    panic!(
+                        "function called with {} args but expected {}",
+                        num_args, function.num_params
+                    );
+                }
                 self.thread_mut().call(function);
             }
         }
-        if self.debug {
+        if self.debug && self.running() {
             let frame = self.thread().frames.last().unwrap();
             println!("stack (+{}):", frame.stack_offset);
             for i in (frame.stack_offset..self.thread().stack.len()).rev() {
@@ -127,25 +142,40 @@ mod test {
 
     #[test]
     fn test_simple() {
+        /*
+           adder := (x) => {
+               (y) => {
+                   x + y
+               }
+           }
+           adder(2)(1)
+        */
         let exprs = vec![
+            Expr::Load { i: 0 }, // y
+            Expr::Load { i: 1 }, // x (enclosed)
             Expr::Add,
+            Expr::Return,
+            // adder
+            Expr::Load { i: 0 },
+            Expr::Function {
+                entry: 0,
+                closure_len: 1,
+                num_params: 1,
+            },
             Expr::Return,
             Expr::Literal { integer: 1 },
             Expr::Literal { integer: 2 },
             Expr::Function {
-                entry: 0,
-                closure_len: 2,
+                entry: 4,
+                closure_len: 0,
+                num_params: 1,
             },
-            Expr::Load { i: 0 },
-            Expr::Call,
-            Expr::Load { i: 0 },
-            Expr::Call,
-            Expr::Add,
+            Expr::Call { num_args: 1 },
+            Expr::Call { num_args: 1 },
             Expr::Return,
         ];
-        let mut vm = VM::new(exprs);
+        let mut vm = VM::new(exprs, 7);
         vm.debug = true;
-        vm.new_thread(2);
         while vm.running() {
             vm.step();
         }

@@ -61,7 +61,7 @@ impl Thread {
     pub fn call(&mut self, function: Function) {
         let frame = Frame {
             addr: function.entry,
-            stack_offset: self.stack.len(),
+            stack_offset: self.stack.len() - function.num_params as usize,
         };
         self.stack.extend(function.closure);
         self.frames.push(frame);
