@@ -162,6 +162,14 @@ mod test {
 
     #[test]
     fn test_fib() {
+        /*
+           fib := (n) => {
+               if      n == 0 { 0 }
+               else if n == 1 { 1 }
+               else           { fib(n - 2) + fib(n - 1) }
+           }
+           fib(8)
+        */
         let exprs = vec![
             // stack is: 0:n, 1:func
             // fib := (n) => { if i == 0 { return 0; }
