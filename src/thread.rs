@@ -43,6 +43,10 @@ impl Thread {
         self.stack.pop().unwrap()
     }
 
+    pub fn peek(&self) -> Value {
+        *self.stack.last().unwrap()
+    }
+
     pub fn pop_n(&mut self, n: usize) -> Vec<Value> {
         self.stack.split_off(self.stack.len() - n)
     }
@@ -59,11 +63,22 @@ impl Thread {
     }
 
     pub fn call(&mut self, function: Function) {
+        // Stack frame is laid out as follows (assuming n arguments and m
+        // enclosed objects):
+        //
+        //   n+1+m - closure m
+        //   ...
+        //   n+1   - closure 0
+        //   n     - function object
+        //   n-1   - arg n
+        //   ...
+        //   0     - arg 0
+        let stack_size = function.num_params as usize + 1 + function.closure.len();
+        self.stack.extend(function.closure);
         let frame = Frame {
             addr: function.entry,
-            stack_offset: self.stack.len() - function.num_params as usize,
+            stack_offset: self.stack.len() - stack_size,
         };
-        self.stack.extend(function.closure);
         self.frames.push(frame);
     }
 }

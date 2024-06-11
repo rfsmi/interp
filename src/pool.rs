@@ -7,16 +7,15 @@ pub struct ObjectPool {
     objects: Vec<Object>,
 }
 
-pub struct ObjectPoolUpdater {
-    pool: ObjectPool,
-    mapping: HashMap<usize, usize>,
-}
-
 impl ObjectPool {
     pub fn new() -> Self {
         Self {
             objects: Vec::new(),
         }
+    }
+
+    pub fn len(&self) -> usize {
+        self.objects.len()
     }
 
     pub fn allocate(&mut self, object: Object) -> Value {
@@ -25,40 +24,36 @@ impl ObjectPool {
         value
     }
 
-    pub fn compact<'a>(self, roots: impl IntoIterator<Item = &'a Value>) -> ObjectPoolUpdater {
-        // Start with the roots
-        let mut queue: Vec<usize> = Vec::new();
-        for value in roots.into_iter() {
-            if let &Value::Object(i) = value {
-                queue.push(i);
-            }
-        }
-        // Recursively visit their references
+    pub fn compact(&mut self, root: Value) -> Value {
+        let Value::Object(root) = root else {
+            self.objects.clear();
+            return root;
+        };
+        let mut queue = vec![root];
+        // Recursively visit each reference
         let mut keep = HashSet::new();
         while let Some(i) = queue.pop() {
             if keep.insert(i) {
                 queue.extend(self.objects[i].references())
             }
         }
-        // Build a list from the visited objects
+        // Build a mapping from old index to new index while copying objects
+        // from the old pool to the new one.
         let mut mapping = HashMap::new();
-        let mut objects = Vec::new();
-        for (i, o) in self.objects.into_iter().enumerate() {
+        let objects = std::mem::take(&mut self.objects);
+        for (i, o) in objects.into_iter().enumerate() {
             if keep.contains(&i) {
-                mapping.insert(i, objects.len());
-                objects.push(o);
+                mapping.insert(i, self.objects.len());
+                self.objects.push(o);
             }
         }
         // Update each object's references
-        for o in &mut objects {
+        for o in &mut self.objects {
             for i in o.references_mut() {
                 *i = *mapping.get(i).unwrap();
             }
         }
-        ObjectPoolUpdater {
-            pool: ObjectPool { objects },
-            mapping,
-        }
+        Value::Object(*mapping.get(&root).unwrap())
     }
 
     pub fn to_string(&self, value: &Value) -> String {
@@ -67,18 +62,6 @@ impl ObjectPool {
             Value::Integer(n) => format!("{n}"),
             Value::Object(i) => format!("{}", &self.objects[*i]),
         }
-    }
-}
-
-impl ObjectPoolUpdater {
-    pub fn update_value(&self, value: &mut Value) {
-        if let Value::Object(i) = value {
-            *i = *self.mapping.get(i).unwrap();
-        }
-    }
-
-    pub fn into_pool(self) -> ObjectPool {
-        self.pool
     }
 }
 

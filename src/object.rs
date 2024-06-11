@@ -46,8 +46,9 @@ impl Display for Object {
         let s = match self {
             Object::Function(function) => {
                 format!(
-                    "function entry:{} enclosing:{}",
+                    "function entry:{} params:{} enclosing:{}",
                     function.entry,
+                    function.num_params,
                     function.closure.len()
                 )
             }
